@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Workshop Module 5 - Polling Pattern
+
+Parameters:
+  UserPool:
+    Type: String
+    Description: User Pool Id from module 2 end state
+  OrdersTablename:
+    Type: String
+    Description: Dynamo DB table for orders from module 3 end state
+  Stage:
+    Type: String
+    Default: dev
+
+Globals:
+  Function:
+    Timeout: 15
+    Tracing: Active
+  Api:
+    TracingEnabled: true
+
+Resources:
+
+  RestaurantBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub "Restaurant-${Stage}"
+      
+
+  WorkshopApiGatewaymodule5:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      EndpointConfiguration:
+        Type: REGIONAL
+      TracingEnabled: true
+      
+      MethodSettings:
+        - LoggingLevel: INFO
+          ResourcePath: '/*'
+          HttpMethod: '*'
+      AccessLogSetting:
+        DestinationArn: !GetAtt AccessLogs.Arn
+        Format: '{ "requestId":"$context.requestId", "ip": "$context.identity.sourceIp", "requestTime":"$context.requestTime", "httpMethod":"$context.httpMethod","routeKey":"$context.routeKey", "status":"$context.status","protocol":"$context.protocol", "integrationStatus": $context.integrationStatus, "integrationLatency": $context.integrationLatency, "responseLength":"$context.responseLength" }'
+      Auth:
+        DefaultAuthorizer: MyCognitoAuthorizer
+        Authorizers:
+          MyCognitoAuthorizer:
+            UserPoolArn: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPool}"
+
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+      LogGroupName: !Sub "/${AWS::StackName}/APIAccessLogs"
+
+  UpdateOrderStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/api/update_order_status.lambda_handler
+      Runtime: python3.12
+      Tracing: Active
+      Policies:
+        DynamoDBCrudPolicy:
+          TableName: !Ref OrdersTablename
+      Environment:
+        Variables:
+          TABLENAME: !Ref OrdersTablename
+          POWERTOOLS_SERVICE_NAME: serverless-workshop
+          
+      Events:
+        Trigger:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref RestaurantBus
+            Pattern:
+              source: 
+                - serverless-workshop-module5
+              detail-type:
+                - Order Update Notification
+
+  GetOrderStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/api/get_order_status.lambda_handler
+      Runtime: python3.12
+      Tracing: Active
+      Policies:
+        DynamoDBReadPolicy:
+          TableName: !Ref OrdersTablename
+      Environment:
+        Variables:
+          TABLENAME: !Ref OrdersTablename
+          POWERTOOLS_SERVICE_NAME: serverless-workshop
+          
+      Events:
+        UpdateOrderStatusEvent:
+          Type: Api
+          Properties:
+            Path: /orders/{orderid}
+            Method: get
+            RestApiId: !Ref WorkshopApiGatewaymodule5
+
+Outputs:
+
+  EventBusName:
+   Description: "Name of Restaurant EventBridge Bus"
+   Value: !Ref RestaurantBus
+
+  Module5ApiEndpoint:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${WorkshopApiGatewaymodule5}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/"

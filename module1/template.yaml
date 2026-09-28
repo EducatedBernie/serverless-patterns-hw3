@@ -1,0 +1,67 @@
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Patterns workshop Module 1
+
+Resources:
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: serverless_workshop_intro
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: _id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: _id
+          KeyType: HASH
+
+  ServerlessRest:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: ServerlessREST
+      StageName: v1
+      EndpointConfiguration: REGIONAL
+
+  FirstFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: first-function
+      CodeUri: first_function/
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Policies:
+        - AWSLambdaBasicExecutionRole
+
+  AddSampleData:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: m1-add-sample-data
+      CodeUri: add_sample_data/
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBWritePolicy:
+            TableName: !Ref UsersTable
+
+  GetUsers:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: get-users
+      CodeUri: get_users/
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBReadPolicy:
+            TableName: !Ref UsersTable
+      Events:
+        Users:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessRest
+            Path: /users
+            Method: get
+
+Outputs:
+  UsersUrl:
+    Value: !Sub 'https://${ServerlessRest}.execute-api.${AWS::Region}.amazonaws.com/v1/users'
