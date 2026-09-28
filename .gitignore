@@ -6,3 +6,4 @@
 **/*.pyc
 **/samconfig.toml
 evidence/
+submission/
